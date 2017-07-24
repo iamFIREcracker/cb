@@ -53,3 +53,10 @@ Adding the following to your `.vimrc` will probably do it:
 
     nnoremap <leader>p :set paste<CR>:read !cb<CR>:set nopaste<CR><leader>V=
     nnoremap <leader>P O<esc>:set paste<CR>:read !cb<CR>:set nopaste<CR>kdd
+
+You might wanna tell vim to load bash in interactive mode, or it won't load
+your `.bashrc` file:
+
+    :set shellcmdflag=-ic
+
+[Source](https://stackoverflow.com/a/4642855/348524)
