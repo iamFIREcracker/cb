@@ -1,10 +1,5 @@
-# INSTALL:
-#
-#   * source this script
-#
-#       . /path/to/cb.sh
-#
-#   * that's it!
+#!/usr/bin/env bash
+
 # USE:
 # 
 #   * cb                  # outputs the content of the clipboard
@@ -13,37 +8,18 @@
 #   * cb --listen         # starts a clipboard daemon -- handy when trying to
 #                         # update the clipboard from a remote ssh session
 
-_CB_REMOTE_PASTE_REQUEST_TOKEN=AKDJF8U4389HSDHF3H9RH39FJSKDHFJH983QR98HAUFHA
+CB_REMOTE_PORT=${CB_REMOTE_PORT:-5556}
+CB_REMOTE_PASTE_REQUEST_TOKEN=AKDJF8U4389HSDHF3H9RH39FJSKDHFJH983QR98HAUFHA
 
-_cb_copy() {
-    if env | grep --quiet -F SSH_TTY; then
-        nc localhost ${_CB_REMOTE_PORT:-5556}
-    elif [ -e /dev/clipboard ]; then
-        putclip
-    else
-        pbcopy
-    fi
-}
-
-_cb_paste() {
-    if env | grep --quiet -F SSH_TTY; then
-        echo -n ${_CB_REMOTE_PASTE_REQUEST_TOKEN} | nc localhost ${_CB_REMOTE_PORT:-5556}
-    elif [ -e /dev/clipboard ]; then
-        getclip
-    else
-        pbpaste
-    fi
-}
-
-_cb_listen() {
-    echo "Listening on port ${_CB_REMOTE_PORT:-5556}..."
+listen() {
+    echo "Listening on port ${CB_REMOTE_PORT}..."
     while (true); do
         python <<END
 import socket, subprocess
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-s.bind(('localhost', ${_CB_REMOTE_PORT:-5556}))
+s.bind(('localhost', ${CB_REMOTE_PORT}))
 s.listen(1)
 remote, _ = s.accept()
 input = ''
@@ -52,7 +28,7 @@ while True:
     if not data:
         break
     input += data
-if input == '${_CB_REMOTE_PASTE_REQUEST_TOKEN}':
+if input == '${CB_REMOTE_PASTE_REQUEST_TOKEN}':
     clipboard = subprocess.check_output(['$0',  '--force-paste'])
     remote.sendall(clipboard)
     print 'Pasted'
@@ -72,14 +48,31 @@ END
     done
 }
 
-_cb() {
-    if [ "$1" = "--force-paste" ]; then
-        _cb_paste
-    elif [ "$1" = "--listen" ]; then
-        _cb_listen
+paste() {
+    if env | grep --quiet -F SSH_TTY; then
+        echo -n ${CB_REMOTE_PASTE_REQUEST_TOKEN} | nc localhost ${CB_REMOTE_PORT}
+    elif [ -e /dev/clipboard ]; then
+        getclip
     else
-        test -t 0 && _cb_paste || _cb_copy
+        pbpaste
     fi
 }
 
-alias ${_CB_CMD:-cb}='_cb 2>&1'
+copy() {
+    if env | grep --quiet -F SSH_TTY; then
+        nc localhost ${CB_REMOTE_PORT}
+    elif [ -e /dev/clipboard ]; then
+        putclip
+    else
+        pbcopy
+    fi
+}
+
+
+if [ "$1" = "--listen" ]; then
+    listen
+elif [ "$1" = "--force-paste" ]; then
+    paste
+else
+    test -t 0 && paste || copy
+    fi
