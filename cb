@@ -11,15 +11,11 @@
 CB_REMOTE_PORT=${CB_REMOTE_PORT:-5556}
 CB_REMOTE_PASTE_REQUEST_TOKEN=AKDJF8U4389HSDHF3H9RH39FJSKDHFJH983QR98HAUFHA
 
-PYTHON=python
-if hash python2 2>/dev/null; then
-    PYTHON=python2
-fi
-
 listen() {
     echo "Listening on port ${CB_REMOTE_PORT}..."
     while (true); do
-        $PYTHON <<END
+        python <<END
+from __future__ import print_function
 import socket, subprocess
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -27,23 +23,23 @@ s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 s.bind(('localhost', ${CB_REMOTE_PORT}))
 s.listen(1)
 remote, _ = s.accept()
-input = ''
+input = b''
 while True:
     data = remote.recv(1024)
     if not data:
         break
     input += data
-if input == '${CB_REMOTE_PASTE_REQUEST_TOKEN}':
+if input == b'${CB_REMOTE_PASTE_REQUEST_TOKEN}':
     clipboard = subprocess.check_output(['$0',  '--force-paste'])
     remote.sendall(clipboard)
-    print 'Pasted'
-    print clipboard
+    print('Pasted')
+    print(clipboard)
 else:
     process = subprocess.Popen(['$0'], stdin=subprocess.PIPE)
     process.communicate(input)
     process.poll()
-    print 'Copied'
-    print input
+    print('Copied')
+    print(input)
 remote.close()
 s.close()
 END
