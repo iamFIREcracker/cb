@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # USE:
-# 
+#
 #   * cb                  # outputs the content of the clipboard
 #   * fortune | cb        # Pipes fortune's output into the clipboard
 #   * cb --force-paste    # forces cb to start in 'paste' mode
