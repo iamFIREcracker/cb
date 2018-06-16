@@ -37,7 +37,7 @@ if input == b'${CB_REMOTE_PASTE_REQUEST_TOKEN}':
 else:
     process = subprocess.Popen(['$0'], stdin=subprocess.PIPE)
     process.communicate(input)
-    process.poll()
+    process.wait()
     print('Copied')
     print(input)
 remote.close()
