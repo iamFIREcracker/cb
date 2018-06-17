@@ -1,12 +1,14 @@
 # cb
 
-Yet another tool to wrap reads from, and writes to the OS clipboard.
+Yet another tool to wrap reads from, and writes to the OS clipboard -- it works
+from within SSH sessions too!
 
-# Backgroud 
+# Backgroud
 
-At work I have a laptop with Windows 7 and Cygwin installed; I also have
-a Vagrant box, running Ubuntu, that I use to do the most of my development
-work.  At home I have a Macbook Air, with Mac OS Sierra.
+My life as a developer is a mess: at work I have a laptop with Windows 7 and
+Cygwin installed; I also have a Vagrant box, running Ubuntu, that I use to do
+the most of my development work.  At home I have a Macbook Air, with Mac OS
+Sierra.
 
 You can easily imagine how quickly I got tired of having to remember which of
 the various `pbaste`, `getclip` et al. command I should have run depending on
@@ -40,16 +42,18 @@ painful that I decided to ship `cb` with some painkillers for that.
 
     > cb --listen
 
-This will start a daemon, listening on port 5556 for commands to read from or
-write to the OS clipboard.  You might wonder: what's so good about it?  Well,
-you can run it on your host machine (ie. the one with a OS clipboard), change
-the ssh commands you use to log into your remote dev boxes to do some port
-forwarding magic:
+This will start a daemon, listening on port 5556 (it's the default, but you can
+change it by overriding the `CB_REMOTE_PORT` env variable) for commands to read
+from or write to the OS clipboard.  You might wonder: what's so good about it?
+Well, you can run it on your host machine (ie. the one with a OS clipboard),
+change the ssh commands you use to log into your remote dev boxes to do some
+port forwarding magic:
 
-    > ssh -R 5556:localhost:5556 ...
+    > ssh -R 5556:localhost:5556 devbox ...
 
 And that's it, running `cb` from the remote host (well, you will have to get
-`cb` installed there too..) will get you the content of the OS clipboard:
+`cb` installed there too..) will get you the content of the host machine OS
+clipboard
 
     > cb
     A little suffering is good for the soul.
