@@ -51,7 +51,7 @@ END
 
 paste() {
     if env | grep --quiet -F SSH_TTY; then
-        echo -n ${CB_REMOTE_PASTE_REQUEST_TOKEN} | nc localhost ${CB_REMOTE_PORT}
+        echo -n ${CB_REMOTE_PASTE_REQUEST_TOKEN} | nc -N localhost ${CB_REMOTE_PORT}
     elif [ -e /dev/clipboard ]; then
         cat /dev/clipboard
     else
@@ -61,7 +61,7 @@ paste() {
 
 copy() {
     if env | grep --quiet -F SSH_TTY; then
-        nc localhost ${CB_REMOTE_PORT}
+        nc -N localhost ${CB_REMOTE_PORT}
     elif [ -e /dev/clipboard ]; then
         cat > /dev/clipboard
     else
