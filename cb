@@ -52,10 +52,10 @@ END
 paste() {
     if env | grep --quiet -F SSH_TTY; then
         echo -n ${CB_REMOTE_PASTE_REQUEST_TOKEN} | nc -N localhost ${CB_REMOTE_PORT}
-    elif hash powershell.exe 2>/dev/null; then
-        powershell.exe Get-Clipboard
     elif [ -e /dev/clipboard ]; then
         cat /dev/clipboard
+    elif hash powershell.exe 2>/dev/null; then
+        powershell.exe Get-Clipboard
     else
         pbpaste
     fi
@@ -64,10 +64,10 @@ paste() {
 copy() {
     if env | grep --quiet -F SSH_TTY; then
         nc -N localhost ${CB_REMOTE_PORT}
-    elif hash clip.exe 2>/dev/null; then
-        clip.exe
     elif [ -e /dev/clipboard ]; then
         cat > /dev/clipboard
+    elif hash clip.exe 2>/dev/null; then
+        clip.exe
     else
         pbcopy
     fi
