@@ -20,6 +20,16 @@ worked on various operating systems? (at least the ones I use on a daily basis)
 
 _enters `cb`.._
 
+# Installation
+
+Clone the repo, and run `make install`:
+
+    mkdir -p ~/opt/
+    cd ~/opt
+    git clone https://github.com/iamFIREcracker/cb.git
+    cd cb
+    PREFIX=~/local/bin make install
+
 # Usage
 
 Writing to the OS clipboard is as simple as piping to `cb` whatever it is that you want
