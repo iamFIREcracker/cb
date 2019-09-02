@@ -5,4 +5,4 @@ PREFIX?=/usr/local
 all: cb
 
 install:
-	cp cb $(PREFIX)/cb
+	cp cb $(PREFIX)/bin/
