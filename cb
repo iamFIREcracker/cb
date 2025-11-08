@@ -14,7 +14,7 @@ CB_REMOTE_PASTE_REQUEST_TOKEN=AKDJF8U4389HSDHF3H9RH39FJSKDHFJH983QR98HAUFHA
 listen() {
     echo "Listening on port ${CB_REMOTE_PORT}..."
     while (true); do
-        python <<END
+        python3 <<END
 from __future__ import print_function
 import socket, subprocess
 
