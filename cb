@@ -51,7 +51,7 @@ END
 
 paste() {
     if env | grep --quiet -F SSH_TTY; then
-        echo -n ${CB_REMOTE_PASTE_REQUEST_TOKEN} | nc -N localhost ${CB_REMOTE_PORT}
+        echo -n ${CB_REMOTE_PASTE_REQUEST_TOKEN} | remote
     elif [ -e /dev/clipboard ]; then
         cat /dev/clipboard
     elif hash powershell.exe 2>/dev/null; then
@@ -65,7 +65,7 @@ paste() {
 
 copy() {
     if env | grep --quiet -F SSH_TTY; then
-        nc -N localhost ${CB_REMOTE_PORT}
+        remote
     elif [ -e /dev/clipboard ]; then
         cat > /dev/clipboard
     elif hash clip.exe 2>/dev/null; then
@@ -77,6 +77,13 @@ copy() {
     fi
 }
 
+remote() {
+    if hash socat 2>/dev/null; then
+        socat - TCP:localhost:${CB_REMOTE_PORT},shut-down
+    else
+        nc -N localhost ${CB_REMOTE_PORT}
+    fi
+}
 
 if [ "$1" = "--listen" ]; then
     listen
