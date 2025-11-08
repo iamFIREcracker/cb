@@ -57,7 +57,7 @@ paste() {
     elif hash powershell.exe 2>/dev/null; then
         powershell.exe Get-Clipboard
     elif hash xsel 2>/dev/null; then
-      xsel --clipboard --output
+        xsel --clipboard --output
     else
         pbpaste
     fi
@@ -71,7 +71,7 @@ copy() {
     elif hash clip.exe 2>/dev/null; then
         clip.exe
     elif hash xsel 2>/dev/null; then
-      xsel --clipboard --input
+        xsel --clipboard --input
     else
         pbcopy
     fi
