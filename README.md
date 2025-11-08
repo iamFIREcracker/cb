@@ -69,6 +69,28 @@ clipboard
     A little suffering is good for the soul.
                     -- Kirk, "The Corbomite Maneuver", stardate 1514.0
 
+## Using `~/.ssh/config` for per-host clipboard forwarding
+
+Instead of manually specifying port forwarding every time, you can configure it
+in your `~/.ssh/config` file. `cb` supports initialization via the
+`LC_CB_REMOTE_PORT` environment variable, which SSH typically transfers to the
+remote host (most SSH daemons are configured to accept `LC_*` variables by
+default; if yours doesn't, check the `AcceptEnv` setting in
+`/etc/ssh/sshd_config`).
+
+Here's an example `~/.ssh/config` entry:
+
+    Host devbox
+        HostName devbox.example.com
+        RemoteForward 5567 localhost:5556
+        SetEnv LC_CB_REMOTE_PORT=5567
+
+With this configuration:
+- The local machine runs `cb --listen` on port 5556
+- SSH forwards the remote's port 5557 to the local port 5556
+- The remote `cb` uses port 5557 (via `LC_CB_REMOTE_PORT`)
+- Running `cb` on the remote automatically connects to the right port
+
 # Tmux integration
 
 Add the following to your `.tmux.conf`:

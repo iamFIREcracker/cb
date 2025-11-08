@@ -8,7 +8,7 @@
 #   * cb --listen         # starts a clipboard daemon -- handy when trying to
 #                         # update the clipboard from a remote ssh session
 
-CB_REMOTE_PORT=${CB_REMOTE_PORT:-5556}
+CB_REMOTE_PORT=${CB_REMOTE_PORT:-${LC_CB_REMOTE_PORT:-5556}}
 CB_REMOTE_PASTE_REQUEST_TOKEN=AKDJF8U4389HSDHF3H9RH39FJSKDHFJH983QR98HAUFHA
 
 listen() {
