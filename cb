@@ -64,7 +64,9 @@ paste() {
 }
 
 copy() {
-    if env | grep --quiet -F SSH_TTY; then
+    if [ -n "${CB_OSC52:-${LC_CB_OSC52:-}}" ]; then
+        osc52_copy
+    elif env | grep --quiet -F SSH_TTY; then
         remote
     elif [ -e /dev/clipboard ]; then
         cat > /dev/clipboard
@@ -82,6 +84,16 @@ remote() {
         socat - TCP:localhost:${CB_REMOTE_PORT},shut-down
     else
         nc -N localhost ${CB_REMOTE_PORT}
+    fi
+}
+
+osc52_copy() {
+    data=$(base64 | tr -d '\n')
+    if [ -n "$TMUX" ]; then
+        # DCS passthrough for tmux
+        printf '\033Ptmux;\033\033]52;c;%s\a\033\\' "$data" > /dev/tty
+    else
+        printf '\033]52;c;%s\a' "$data" > /dev/tty
     fi
 }
 

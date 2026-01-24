@@ -91,6 +91,30 @@ With this configuration:
 - The remote `cb` uses port 5557 (via `LC_CB_REMOTE_PORT`)
 - Running `cb` on the remote automatically connects to the right port
 
+## OSC52 support (no daemon required)
+
+If your terminal supports OSC52 escape sequences, you can copy to the clipboard
+without running a daemon or setting up port forwarding. Just set the `CB_OSC52`
+or `LC_CB_OSC52` environment variable:
+
+    Host devbox
+        HostName devbox.example.com
+        SetEnv LC_CB_OSC52=1
+
+Then on the remote:
+
+    > echo "hello" | cb   # Copies to your local clipboard via OSC52
+
+This works by sending an escape sequence directly to your terminal, which then
+updates the clipboard. It works through tmux as well (using DCS passthrough).
+
+**Note**: OSC52 only supports copy operations. Paste still requires the daemon
+approach or a local clipboard tool.
+
+**Terminal compatibility**: OSC52 is supported by iTerm2, kitty, alacritty,
+foot, WezTerm, Windows Terminal, xterm (with `allowWindowOps`), and others.
+Some terminals disable it by default -- check your terminal's documentation.
+
 # Tmux integration
 
 Add the following to your `.tmux.conf`:
@@ -136,3 +160,17 @@ nnoremap <leader>P O<esc>:set paste<CR>:read !cb<CR>:set nopaste<CR>kdd
 Borrowed from Steve Losh's awesome
 [vimrc](https://bitbucket.org/sjl/dotfiles/src/af2b6e2d27f39640970fbf20b8176855c7a489c4/vim/vimrc?at=default&fileviewer=file-view-default#vimrc-323)
 -- thanks for all that!
+
+```
+Host beast.tailscale.internal
+    HostName 192.168.1.2
+    # HostName 10.202.191.107
+    User matteolandi
+    IdentityFile ~/.ssh/id_beast
+    RemoteForward 6556 localhost:5556
+    RemoteForward 6557 localhost:5557
+    RemoteForward 6558 localhost:5558
+    SendEnv -LANG -LC_ALL
+    # Here we abuse the fact that LC_* envs are sent by default
+    SetEnv LC_CB_REMOTE_PORT=6556 LC_BR_REMOTE_PORT=6557 LC_MG_REMOTE_PORT=6558
+```
