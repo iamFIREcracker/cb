@@ -108,6 +108,10 @@ Then on the remote:
 This works by sending an escape sequence directly to your terminal, which then
 updates the clipboard. It works through tmux as well (using DCS passthrough).
 
+**Tmux 3.3+**: You must enable passthrough in your `~/.tmux.conf`:
+
+    set -g allow-passthrough on
+
 **Note**: OSC52 only supports copy operations. Paste still requires the daemon
 approach or a local clipboard tool.
 
