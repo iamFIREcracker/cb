@@ -64,18 +64,20 @@ paste() {
 }
 
 copy() {
-    if [ -n "${CB_OSC52:-${LC_CB_OSC52:-}}" ]; then
-        osc52_copy
+    local input
+    input=$(cat)
+    if [ -n "${CB_OSC52:-${LC_CB_OSC52:-}}" ] && printf '%s' "$input" | osc52_copy; then
+        : # do nothing... it would already have been copied
     elif env | grep --quiet -F SSH_TTY; then
-        remote
+        printf '%s' "$input" | remote
     elif [ -e /dev/clipboard ]; then
-        cat > /dev/clipboard
+        printf '%s' "$input" > /dev/clipboard
     elif hash clip.exe 2>/dev/null; then
-        clip.exe
+        printf '%s' "$input" | clip.exe
     elif hash xsel 2>/dev/null; then
-        xsel --clipboard --input
+        printf '%s' "$input" | xsel --clipboard --input
     else
-        pbcopy
+        printf '%s' "$input" | pbcopy
     fi
 }
 
@@ -88,6 +90,13 @@ remote() {
 }
 
 osc52_copy() {
+    # Check if we actually have a TTY to write to.
+    # If /dev/tty isn't available, we skip OSC52 and return a 
+    # non-zero status so 'copy' can try the next method.
+    if ! [ -w /dev/tty ]; then
+        return 1
+    fi
+
     data=$(base64 | tr -d '\n')
     if [ -n "$TMUX" ]; then
         # DCS passthrough for tmux
