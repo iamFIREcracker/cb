@@ -55,7 +55,7 @@ paste() {
     elif [ -e /dev/clipboard ]; then
         cat /dev/clipboard
     elif hash powershell.exe 2>/dev/null; then
-        powershell.exe Get-Clipboard
+        powershell.exe -NoProfile -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Clipboard"
     elif hash xsel 2>/dev/null; then
         xsel --clipboard --output
     else
