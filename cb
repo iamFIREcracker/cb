@@ -72,8 +72,8 @@ copy() {
         printf '%s' "$input" | remote
     elif [ -e /dev/clipboard ]; then
         printf '%s' "$input" > /dev/clipboard
-    elif hash clip.exe 2>/dev/null; then
-        printf '%s' "$input" | clip.exe
+    elif hash powershell.exe 2>/dev/null; then
+        printf '%s' "$input" | powershell.exe -NoProfile -Command "Set-Clipboard -Value ((New-Object System.IO.StreamReader([Console]::OpenStandardInput(), (New-Object System.Text.UTF8Encoding(\$false)))).ReadToEnd())"
     elif hash xsel 2>/dev/null; then
         printf '%s' "$input" | xsel --clipboard --input
     else
