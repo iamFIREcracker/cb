@@ -83,7 +83,13 @@ copy() {
 
 remote() {
     if hash socat 2>/dev/null; then
-        socat - TCP:localhost:${CB_REMOTE_PORT},shut-down
+        # we also had ',shut-down' before, but that shuts down the connection
+        # without consuming the input coming from the other side
+        # this one somehow works..
+        # 5 seconds is arbitrary... it will terminate sooner if the other end
+        # closes it
+        # why 5 and not 1? because 5 plays better with images
+        socat -t5 - TCP:localhost:${CB_REMOTE_PORT}
     else
         nc -N localhost ${CB_REMOTE_PORT}
     fi
