@@ -147,7 +147,20 @@ first, then the image path on its own line:
 
 This is handy for feeding screenshots straight into tools that take a file path.
 
+Copying works the other way round too. With the same variable set, if what you
+pipe into `cb` looks like an image (PNG, JPEG, GIF, TIFF, BMP, WebP -- detected
+from the bytes, not the name), it lands on the clipboard as an image rather than
+as a blob of text:
+
+    > CB_IMAGE=1 cb < diagram.png
+
+Anything that does not sniff as an image is copied as text, exactly as before.
+
 How it works, and what you need:
+
+For copying, the same tools are used in reverse (`osascript`, `xclip`,
+`wl-copy`, `powershell.exe`); `xsel` and Cygwin's `/dev/clipboard` cannot take
+images.
 
 - **macOS** -- no extra tools required (`osascript` is built in); if you have
   [`pngpaste`](https://github.com/jcsalterego/pngpaste) installed it is used
@@ -170,7 +183,9 @@ an image, `cb` simply behaves as it always has and prints the text.
 
 ## Over SSH
 
-Image pasting works through the daemon too. When you run `cb` on a remote box,
+Image copying and pasting work through the daemon too. Copying just streams
+the bytes to the host, whose `cb` sniffs them like a local copy (so the host
+needs `CB_IMAGE` set in the daemon's environment). When you run `cb` on a remote box,
 the **host** (the machine with the real clipboard) streams the raw image *bytes*
 back, and the **remote** saves them to its own `/tmp` -- so the path `cb` prints
 is always local to wherever you ran it. Enable it the same way you enable the

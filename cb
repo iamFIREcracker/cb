@@ -21,7 +21,12 @@ listen() {
     while (true); do
         python3 <<END
 from __future__ import print_function
-import socket, subprocess
+import os, socket, subprocess
+
+# The text request must return text only: with CB_IMAGE set on the host,
+# '--force-paste' would also print a host-local image path. The remote asks
+# for the image separately, with its own token.
+text_env = {k: v for k, v in os.environ.items() if k not in ('CB_IMAGE', 'LC_CB_IMAGE')}
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -35,7 +40,7 @@ while True:
         break
     input += data
 if input == b'${CB_REMOTE_PASTE_REQUEST_TOKEN}':
-    clipboard = subprocess.check_output(['$0',  '--force-paste'])
+    clipboard = subprocess.check_output(['$0', '--force-paste'], env=text_env)
     remote.sendall(clipboard)
     print('Pasted')
     print(clipboard)
@@ -47,8 +52,11 @@ else:
     process = subprocess.Popen(['$0', '--copy'], stdin=subprocess.PIPE)
     process.communicate(input)
     process.wait()
-    print('Copied')
-    print(input)
+    if b'\0' in input:
+        print('Copied %d bytes (binary)' % len(input))
+    else:
+        print('Copied')
+        print(input)
 remote.close()
 s.close()
 END
@@ -74,7 +82,24 @@ paste() {
 
 copy() {
     local input
-    input=$(cat)
+    if image_mode; then
+        # Buffer stdin to a file first: $(cat) would mangle binary data (NULs,
+        # trailing newlines). If it sniffs as an image, put it on the clipboard
+        # as an image; otherwise carry on with the text path below.
+        local dir=${TMPDIR:-/tmp}; dir=${dir%/}
+        local tmp="$dir/cb.image.$$.bin" ext
+        cat > "$tmp"
+        if ext=$(sniff_ext "$tmp"); then
+            mv -f "$tmp" "$dir/cb.image.$$.$ext"; tmp="$dir/cb.image.$$.$ext"
+            copy_clipboard_image "$tmp"
+            local rc=$?
+            rm -f "$tmp"
+            return $rc
+        fi
+        input=$(cat "$tmp"); rm -f "$tmp"
+    else
+        input=$(cat)
+    fi
     # Refuse to wipe the clipboard with nothing, unless the caller made that
     # intent explicit -- either with --copy, or by reading from /dev/null.
     # Note $(cat) strips trailing newlines, so an input made of newlines only
@@ -290,6 +315,58 @@ dump_image_powershell() {
 # Attempt to write the clipboard's image bytes into the file named by $1.
 # Returns 0 when image bytes were produced, non-zero otherwise (no image, or no
 # capable tool on this platform). Mirrors paste()'s platform ordering.
+# Counterparts of dump_image_*: put an image *file* on the clipboard.
+copy_image_macos() {
+    local file=$1 klass
+    case "$file" in
+        *.jpg)  klass='JPEG picture' ;;
+        *.gif)  klass='GIF picture' ;;
+        *.tiff) klass='TIFF picture' ;;
+        *)      klass='«class PNGf»' ;;
+    esac
+    osascript -e "set the clipboard to (read (POSIX file \"$file\") as $klass)" >/dev/null 2>&1
+}
+
+copy_image_x11() {
+    local file=$1
+    xclip -selection clipboard -t "image/${file##*.}" -i "$file" 2>/dev/null
+}
+
+copy_image_wayland() {
+    local file=$1
+    wl-copy --type "image/${file##*.}" < "$file" 2>/dev/null
+}
+
+copy_image_powershell() {
+    local file=$1 winpath
+    winpath=$(wslpath -w "$file" 2>/dev/null) || winpath=$file
+    powershell.exe -NoProfile -STA -Command "
+        Add-Type -AssemblyName System.Windows.Forms
+        Add-Type -AssemblyName System.Drawing
+        \$img = [System.Drawing.Image]::FromFile('$winpath')
+        try { [System.Windows.Forms.Clipboard]::SetImage(\$img) } finally { \$img.Dispose() }
+    " >/dev/null 2>&1
+}
+
+copy_clipboard_image() {
+    local file=$1
+    if env | grep --quiet -F SSH_TTY; then
+        # The daemon feeds whatever it receives to the host's 'cb', which
+        # sniffs the bytes and lands here again on the host side.
+        remote < "$file"
+    elif [ -e /dev/clipboard ]; then
+        return 1                                          # Cygwin: text-only
+    elif hash powershell.exe 2>/dev/null; then
+        copy_image_powershell "$file"
+    elif [ -n "${WAYLAND_DISPLAY:-}" ] && hash wl-copy 2>/dev/null; then
+        copy_image_wayland "$file"
+    elif hash xclip 2>/dev/null; then
+        copy_image_x11 "$file"
+    else
+        copy_image_macos "$file"
+    fi
+}
+
 dump_clipboard_image() {
     local out=$1
     if [ -e /dev/clipboard ]; then
