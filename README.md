@@ -151,7 +151,9 @@ How it works, and what you need:
 
 - **macOS** -- no extra tools required (`osascript` is built in); if you have
   [`pngpaste`](https://github.com/jcsalterego/pngpaste) installed it is used
-  instead.
+  instead. Copying an image *file* in Finder (Cmd-C on the file) works too:
+  `cb` notices the file reference and copies the file itself, rather than the
+  file's icon that Finder also puts on the clipboard.
 - **Linux/X11** -- needs `xclip` (the older `xsel` cannot read images).
 - **Linux/Wayland** -- needs `wl-paste` (from `wl-clipboard`).
 - **Windows/WSL** -- uses `powershell.exe` (`Get-Clipboard -Format Image`), which

@@ -202,6 +202,14 @@ select_image_target() {
 
 dump_image_macos() {
     local out=$1
+    # Copying a file in Finder (Cmd-C) puts a file reference on the clipboard
+    # plus the file's *icon* as PNG/TIFF; asking for PNGf would hand us the
+    # icon. So when the reference points at an image file, use that file.
+    local src
+    src=$(osascript -e 'POSIX path of (the clipboard as «class furl»)' 2>/dev/null)
+    if [ -n "$src" ] && [ -f "$src" ] && sniff_ext "$src" >/dev/null; then
+        cp "$src" "$out" && return 0
+    fi
     if hash pngpaste 2>/dev/null; then
         pngpaste "$out" >/dev/null 2>&1
     else
