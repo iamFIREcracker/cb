@@ -158,10 +158,6 @@ Anything that does not sniff as an image is copied as text, exactly as before.
 
 How it works, and what you need:
 
-For copying, the same tools are used in reverse (`osascript`, `xclip`,
-`wl-copy`, `powershell.exe`); `xsel` and Cygwin's `/dev/clipboard` cannot take
-images.
-
 - **macOS** -- no extra tools required (`osascript` is built in); if you have
   [`pngpaste`](https://github.com/jcsalterego/pngpaste) installed it is used
   instead. Copying an image *file* in Finder (Cmd-C on the file) works too:
@@ -173,6 +169,10 @@ images.
   reads the Windows clipboard directly and saves a PNG. This conveniently
   sidesteps WSLg's habit of exposing clipboard images only as an awkward BMP
   variant that many image readers silently reject.
+
+For copying, the same tools are used in reverse (`osascript`, `xclip`,
+`wl-copy`, `powershell.exe`); `xsel` and Cygwin's `/dev/clipboard` cannot take
+images.
 
 Image detection is done by inspecting the actual bytes (magic numbers), not by
 trusting the clipboard's advertised type. If the extracted image is in an awkward

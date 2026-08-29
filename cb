@@ -86,11 +86,11 @@ copy() {
         # Buffer stdin to a file first: $(cat) would mangle binary data (NULs,
         # trailing newlines). If it sniffs as an image, put it on the clipboard
         # as an image; otherwise carry on with the text path below.
-        local dir=${TMPDIR:-/tmp}; dir=${dir%/}
-        local tmp="$dir/cb.image.$$.bin" ext
+        image_tmp
+        local tmp=$CB_IMAGE_TMP ext
         cat > "$tmp"
         if ext=$(sniff_ext "$tmp"); then
-            mv -f "$tmp" "$dir/cb.image.$$.$ext"; tmp="$dir/cb.image.$$.$ext"
+            mv -f "$tmp" "${tmp%.bin}.$ext"; tmp="${tmp%.bin}.$ext"; CB_IMAGE_TMP=$tmp
             copy_clipboard_image "$tmp"
             local rc=$?
             rm -f "$tmp"
@@ -159,6 +159,20 @@ image_mode() {
     [ -n "${CB_IMAGE:-${LC_CB_IMAGE:-}}" ]
 }
 
+# Pick the temp file image bytes are buffered in and arrange for it to be
+# removed on the way out. The callers all rm it explicitly on their own failure
+# paths, but a signal in the middle of a 'cat', a remote transfer or a
+# dump_image_* would never reach those rm's -- hence the trap. Callers that
+# rename the file (to its sniffed extension) reassign $CB_IMAGE_TMP so the trap
+# follows it; do_paste clears the trap once the file is handed to the user.
+image_tmp() {
+    local dir=${TMPDIR:-/tmp}
+    CB_IMAGE_TMP="${dir%/}/cb.image.$$.bin"
+    trap 'rm -f "$CB_IMAGE_TMP"' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' HUP TERM
+}
+
 # Inspect a file and, if it looks like an image, echo the matching file
 # extension and return 0; otherwise return non-zero. Detection is done on the
 # bytes themselves (magic numbers) so it works identically for locally
@@ -166,11 +180,22 @@ image_mode() {
 sniff_ext() {
     [ -s "$1" ] || return 1
 
+    # Deliberately a closed list rather than 'image/*': libmagic reports plain
+    # *text* formats as images too (an SVG is image/svg+xml, an XPM is
+    # image/x-xpmi), and none of the clipboard back-ends can actually carry
+    # those -- they would be mangled or dropped instead of copied as text.
+    # Anything not listed here falls through to the magic-byte table below,
+    # which is the same closed set of raster formats.
     local mime
     mime=$(file --mime-type -b "$1" 2>/dev/null)
     case "$mime" in
-        image/jpeg) echo jpg; return 0 ;;
-        image/*)    echo "${mime#image/}"; return 0 ;;  # png, gif, tiff, webp, ...
+        image/jpeg)                     echo jpg;  return 0 ;;
+        image/png)                      echo png;  return 0 ;;
+        image/gif)                      echo gif;  return 0 ;;
+        image/tiff)                     echo tiff; return 0 ;;
+        image/bmp|image/x-ms-bmp|image/x-bmp)
+                                        echo bmp;  return 0 ;;
+        image/webp)                     echo webp; return 0 ;;
     esac
 
     # Fallback when 'file' is missing or unhelpful: sniff the leading bytes.
@@ -230,10 +255,21 @@ dump_image_macos() {
     # Copying a file in Finder (Cmd-C) puts a file reference on the clipboard
     # plus the file's *icon* as PNG/TIFF; asking for PNGf would hand us the
     # icon. So when the reference points at an image file, use that file.
+    # 'clipboard info' first: casting to «class furl» *coerces*, so a clipboard
+    # holding the plain text "/etc/hosts" would happily hand back that path and
+    # we would read an unrelated file off disk. 'clipboard info for «class
+    # furl»' prints nothing unless a real file reference is present.
     local src
-    src=$(osascript -e 'POSIX path of (the clipboard as «class furl»)' 2>/dev/null)
-    if [ -n "$src" ] && [ -f "$src" ] && sniff_ext "$src" >/dev/null; then
-        cp "$src" "$out" && return 0
+    if [ -n "$(osascript -e 'clipboard info for «class furl»' 2>/dev/null)" ]; then
+        src=$(osascript -e 'POSIX path of (the clipboard as «class furl»)' 2>/dev/null)
+        # A file reference is on the clipboard: either it points at an image, in
+        # which case that file *is* the answer, or we decline outright -- falling
+        # through would hand back the generic icon Finder puts there alongside a
+        # PDF/folder/text file, which sniffs as a perfectly good PNG.
+        [ -n "$src" ] && [ -f "$src" ] && sniff_ext "$src" >/dev/null || return 1
+        cp "$src" "$out" || return 1
+        [ -s "$out" ] && return 0
+        return 1
     fi
     if hash pngpaste 2>/dev/null; then
         pngpaste "$out" >/dev/null 2>&1
@@ -312,9 +348,6 @@ dump_image_powershell() {
     [ -s "$out" ]
 }
 
-# Attempt to write the clipboard's image bytes into the file named by $1.
-# Returns 0 when image bytes were produced, non-zero otherwise (no image, or no
-# capable tool on this platform). Mirrors paste()'s platform ordering.
 # Counterparts of dump_image_*: put an image *file* on the clipboard.
 copy_image_macos() {
     local file=$1 klass
@@ -327,14 +360,25 @@ copy_image_macos() {
     osascript -e "set the clipboard to (read (POSIX file \"$file\") as $klass)" >/dev/null 2>&1
 }
 
+# Map one of sniff_ext's extensions to the MIME type consumers actually ask
+# for: sniff_ext stores JPEG as 'jpg', but the registered type is image/jpeg
+# (and it is image/jpeg that select_image_target requests on the paste side).
+image_mime() {
+    case "$1" in
+        jpg|jpeg) echo image/jpeg ;;
+        tif|tiff) echo image/tiff ;;
+        *)        echo "image/$1" ;;
+    esac
+}
+
 copy_image_x11() {
     local file=$1
-    xclip -selection clipboard -t "image/${file##*.}" -i "$file" 2>/dev/null
+    xclip -selection clipboard -t "$(image_mime "${file##*.}")" -i "$file" 2>/dev/null
 }
 
 copy_image_wayland() {
     local file=$1
-    wl-copy --type "image/${file##*.}" < "$file" 2>/dev/null
+    wl-copy --type "$(image_mime "${file##*.}")" < "$file" 2>/dev/null
 }
 
 copy_image_powershell() {
@@ -367,6 +411,9 @@ copy_clipboard_image() {
     fi
 }
 
+# Attempt to write the clipboard's image bytes into the file named by $1.
+# Returns 0 when image bytes were produced, non-zero otherwise (no image, or no
+# capable tool on this platform). Mirrors paste()'s platform ordering.
 dump_clipboard_image() {
     local out=$1
     if [ -e /dev/clipboard ]; then
@@ -386,8 +433,8 @@ dump_clipboard_image() {
 # nothing) to stdout. The remote -- not the host -- saves them, so the path it
 # prints is local to where 'cb' was run.
 force_paste_image() {
-    local dir=${TMPDIR:-/tmp}; dir=${dir%/}
-    local tmp="$dir/cb.image.$$.bin"
+    image_tmp
+    local tmp=$CB_IMAGE_TMP
     if dump_clipboard_image "$tmp" && sniff_ext "$tmp" >/dev/null; then
         cat "$tmp"
     fi
@@ -400,10 +447,10 @@ force_paste_image() {
 do_paste() {
     image_mode || { paste; return; }
 
-    local text imgpath ext base tmp dir
-    dir=${TMPDIR:-/tmp}; dir=${dir%/}
-    base="$dir/cb.image.$$"
-    tmp="$base.bin"
+    local text imgpath ext base tmp
+    image_tmp
+    tmp=$CB_IMAGE_TMP
+    base="${tmp%.bin}"
 
     text=$(paste)
 
@@ -418,8 +465,9 @@ do_paste() {
 
     if ext=$(sniff_ext "$tmp"); then
         imgpath="$base.$ext"
-        mv -f "$tmp" "$imgpath"
-        imgpath=$(normalize_image "$imgpath")
+        mv -f "$tmp" "$imgpath"; CB_IMAGE_TMP=$imgpath
+        imgpath=$(normalize_image "$imgpath"); CB_IMAGE_TMP=$imgpath
+        trap - EXIT   # the file is the answer we are about to print: keep it
     else
         rm -f "$tmp"
     fi
