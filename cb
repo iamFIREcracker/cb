@@ -14,6 +14,7 @@
 
 CB_REMOTE_PORT=${CB_REMOTE_PORT:-${LC_CB_REMOTE_PORT:-5556}}
 CB_REMOTE_PASTE_REQUEST_TOKEN=AKDJF8U4389HSDHF3H9RH39FJSKDHFJH983QR98HAUFHA
+CB_REMOTE_PASTE_IMAGE_REQUEST_TOKEN=ZXKCJV8U4389HSDHF3H9RH39FJSKDHFJH983QR98IMG
 
 listen() {
     echo "Listening on port ${CB_REMOTE_PORT}..."
@@ -38,6 +39,10 @@ if input == b'${CB_REMOTE_PASTE_REQUEST_TOKEN}':
     remote.sendall(clipboard)
     print('Pasted')
     print(clipboard)
+elif input == b'${CB_REMOTE_PASTE_IMAGE_REQUEST_TOKEN}':
+    image = subprocess.check_output(['$0', '--force-paste-image'])
+    remote.sendall(image)
+    print('Pasted image (%d bytes)' % len(image))
 else:
     process = subprocess.Popen(['$0', '--copy'], stdin=subprocess.PIPE)
     process.communicate(input)
@@ -124,17 +129,235 @@ osc52_copy() {
     fi
 }
 
+# Image-on-paste support (opt-in via CB_IMAGE / LC_CB_IMAGE).
+image_mode() {
+    [ -n "${CB_IMAGE:-${LC_CB_IMAGE:-}}" ]
+}
+
+# Inspect a file and, if it looks like an image, echo the matching file
+# extension and return 0; otherwise return non-zero. Detection is done on the
+# bytes themselves (magic numbers) so it works identically for locally
+# extracted images and for bytes received over the daemon.
+sniff_ext() {
+    [ -s "$1" ] || return 1
+
+    local mime
+    mime=$(file --mime-type -b "$1" 2>/dev/null)
+    case "$mime" in
+        image/jpeg) echo jpg; return 0 ;;
+        image/*)    echo "${mime#image/}"; return 0 ;;  # png, gif, tiff, webp, ...
+    esac
+
+    # Fallback when 'file' is missing or unhelpful: sniff the leading bytes.
+    local sig
+    sig=$(head -c 16 "$1" | od -An -tx1 | tr -d ' \n')
+    case "$sig" in
+        89504e47*)                 echo png  ;;  # \x89PNG
+        ffd8ff*)                   echo jpg  ;;  # JPEG
+        47494638*)                 echo gif  ;;  # GIF87a / GIF89a
+        49492a00*|4d4d002a*)       echo tiff ;;  # II*\0 / MM\0*
+        424d*)                     echo bmp  ;;  # BM
+        52494646????????57454250*) echo webp ;;  # RIFF....WEBP
+        *)                         return 1 ;;
+    esac
+}
+
+# Best-effort: if the file is an awkward format for downstream consumers (BMP or
+# TIFF -- e.g. the obscure BI_BITFIELDS BMP that WSLg hands out, which many
+# decoders silently reject), convert it to PNG and echo the new path. On any
+# miss (odd format, no converter, failed conversion) echo the original path
+# unchanged -- we never fail a paste over normalisation.
+normalize_image() {
+    local file=$1
+    case "$file" in
+        *.bmp|*.tiff) ;;
+        *) printf '%s' "$file"; return 0 ;;
+    esac
+
+    local png="${file%.*}.png"
+    if { hash sips    2>/dev/null && sips -s format png "$file" --out "$png" >/dev/null 2>&1; } \
+    || { hash magick  2>/dev/null && magick "$file" "$png"                   >/dev/null 2>&1; } \
+    || { hash convert 2>/dev/null && convert "$file" "$png"                  >/dev/null 2>&1; }; then
+        rm -f "$file"
+        printf '%s' "$png"
+    else
+        printf '%s' "$file"
+    fi
+}
+
+# From a newline-separated list of clipboard MIME types/targets, echo the
+# preferred image type to request (returns non-zero if none are images). We
+# don't assume PNG: some sources only offer BMP/TIFF/etc.
+select_image_target() {
+    local list=$1 t
+    for t in image/png image/jpeg image/gif image/tiff image/webp image/bmp; do
+        if printf '%s\n' "$list" | grep -Fqix "$t"; then
+            echo "$t"; return 0
+        fi
+    done
+    # Fall back to whatever image/* is offered first.
+    t=$(printf '%s\n' "$list" | grep -im1 '^image/') && [ -n "$t" ] && { echo "$t"; return 0; }
+    return 1
+}
+
+dump_image_macos() {
+    local out=$1
+    if hash pngpaste 2>/dev/null; then
+        pngpaste "$out" >/dev/null 2>&1
+    else
+        hash osascript 2>/dev/null || return 1
+        # Try PNG first, then TIFF; the cast fails (and we move on) when the
+        # clipboard has no image of that flavour.
+        osascript_write_clipboard "$out" "«class PNGf»" \
+            || osascript_write_clipboard "$out" "«class TIFF»"
+    fi
+    [ -s "$out" ]
+}
+
+osascript_write_clipboard() {
+    local out=$1 klass=$2
+    osascript >/dev/null 2>&1 <<EOF
+set theFile to (open for access (POSIX file "$out") with write permission)
+try
+    set eof theFile to 0
+    write (the clipboard as $klass) to theFile
+    close access theFile
+on error errMsg number errNum
+    try
+        close access theFile
+    end try
+    error errMsg number errNum
+end try
+EOF
+}
+
+dump_image_x11() {
+    local out=$1 targets type
+    targets=$(xclip -selection clipboard -t TARGETS -o 2>/dev/null) || return 1
+    type=$(select_image_target "$targets") || return 1
+    xclip -selection clipboard -t "$type" -o > "$out" 2>/dev/null
+    [ -s "$out" ]
+}
+
+dump_image_wayland() {
+    local out=$1 types type
+    types=$(wl-paste -l 2>/dev/null) || return 1
+    type=$(select_image_target "$types") || return 1
+    wl-paste --type "$type" > "$out" 2>/dev/null
+    [ -s "$out" ]
+}
+
+dump_image_powershell() {
+    local out=$1 winpath wslp
+    # Ask Windows to save the clipboard image as PNG to a temp file and print the
+    # Windows path it used (empty when there's no image). Reading straight from
+    # the Windows clipboard this way sidesteps the WSLg CF_DIB -> image/bmp mess.
+    winpath=$(powershell.exe -NoProfile -Command '
+        $img = Get-Clipboard -Format Image
+        if ($img) {
+            try {
+                $p = [System.IO.Path]::ChangeExtension(
+                    [System.IO.Path]::Combine(
+                        $env:TEMP,
+                        [System.IO.Path]::GetRandomFileName()
+                    ),
+                    ".png"
+                )
+
+                $img.Save($p, [System.Drawing.Imaging.ImageFormat]::Png)
+                Write-Output $p
+            }
+            finally {
+                $img.Dispose()
+            }
+        }
+    ' 2>/dev/null | tr -d '\r')
+    [ -n "$winpath" ] || return 1
+    wslp=$(wslpath -u "$winpath" 2>/dev/null) || return 1
+    cp "$wslp" "$out" 2>/dev/null
+    rm -f "$wslp" 2>/dev/null
+    [ -s "$out" ]
+}
+
+# Attempt to write the clipboard's image bytes into the file named by $1.
+# Returns 0 when image bytes were produced, non-zero otherwise (no image, or no
+# capable tool on this platform). Mirrors paste()'s platform ordering.
+dump_clipboard_image() {
+    local out=$1
+    if [ -e /dev/clipboard ]; then
+        return 1                                          # Cygwin: text-only
+    elif hash powershell.exe 2>/dev/null; then
+        dump_image_powershell "$out"
+    elif [ -n "${WAYLAND_DISPLAY:-}" ] && hash wl-paste 2>/dev/null; then
+        dump_image_wayland "$out"
+    elif hash xclip 2>/dev/null; then
+        dump_image_x11 "$out"
+    else
+        dump_image_macos "$out"
+    fi
+}
+
+# Host side of the daemon image protocol: emit the clipboard's image bytes (or
+# nothing) to stdout. The remote -- not the host -- saves them, so the path it
+# prints is local to where 'cb' was run.
+force_paste_image() {
+    local dir=${TMPDIR:-/tmp}; dir=${dir%/}
+    local tmp="$dir/cb.image.$$.bin"
+    if dump_clipboard_image "$tmp" && sniff_ext "$tmp" >/dev/null; then
+        cat "$tmp"
+    fi
+    rm -f "$tmp"
+}
+
+# Paste that understands images. With image mode off it is exactly paste(). With
+# it on, it prints the clipboard text (if any) then, on its own line, the path of
+# a locally saved image (if any) -- combining the two when both are present.
+do_paste() {
+    image_mode || { paste; return; }
+
+    local text imgpath ext base tmp dir
+    dir=${TMPDIR:-/tmp}; dir=${dir%/}
+    base="$dir/cb.image.$$"
+    tmp="$base.bin"
+
+    text=$(paste)
+
+    if env | grep --quiet -F SSH_TTY; then
+        echo sleeping
+        sleep 2 # XXX the server is bouncing after the the text paste..
+        # The host streams raw image bytes back; we save them locally below.
+        printf '%s' "$CB_REMOTE_PASTE_IMAGE_REQUEST_TOKEN" | remote > "$tmp"
+    else
+        dump_clipboard_image "$tmp"
+    fi
+
+    if ext=$(sniff_ext "$tmp"); then
+        imgpath="$base.$ext"
+        mv -f "$tmp" "$imgpath"
+        imgpath=$(normalize_image "$imgpath")
+    else
+        rm -f "$tmp"
+    fi
+
+    [ -n "$text" ]    && printf '%s\n' "$text"
+    [ -n "$imgpath" ] && printf '%s\n' "$imgpath"
+    return 0
+}
+
 case "${1:-}" in
     --listen)
         listen
         ;;
     --paste|--force-paste)
-        paste
+        do_paste
+        ;;
+    --force-paste-image)
+        force_paste_image
         ;;
     --copy)
         copy --force
         ;;
     *)
-        test -t 0 && paste || copy
+        test -t 0 && do_paste || copy
         ;;
 esac

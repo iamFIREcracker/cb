@@ -128,6 +128,73 @@ approach or a local clipboard tool.
 foot, WezTerm, Windows Terminal, xterm (with `allowWindowOps`), and others.
 Some terminals disable it by default -- check your terminal's documentation.
 
+# Pasting images
+
+Normally `cb` only deals with text. If you set the `CB_IMAGE` (or `LC_CB_IMAGE`)
+environment variable, `cb` will also notice when the clipboard holds an *image*,
+save it to a temporary file, and print that file's path instead of dumping binary
+junk to your terminal:
+
+    > CB_IMAGE=1 cb
+    /tmp/cb.image.48213.png
+
+If the clipboard happens to hold both text and an image, you get both -- the text
+first, then the image path on its own line:
+
+    > CB_IMAGE=1 cb
+    Here is the diagram I mentioned
+    /tmp/cb.image.48213.png
+
+This is handy for feeding screenshots straight into tools that take a file path.
+
+How it works, and what you need:
+
+- **macOS** -- no extra tools required (`osascript` is built in); if you have
+  [`pngpaste`](https://github.com/jcsalterego/pngpaste) installed it is used
+  instead.
+- **Linux/X11** -- needs `xclip` (the older `xsel` cannot read images).
+- **Linux/Wayland** -- needs `wl-paste` (from `wl-clipboard`).
+- **Windows/WSL** -- uses `powershell.exe` (`Get-Clipboard -Format Image`), which
+  reads the Windows clipboard directly and saves a PNG. This conveniently
+  sidesteps WSLg's habit of exposing clipboard images only as an awkward BMP
+  variant that many image readers silently reject.
+
+Image detection is done by inspecting the actual bytes (magic numbers), not by
+trusting the clipboard's advertised type. If the extracted image is in an awkward
+format (BMP/TIFF) and a converter is available (`sips` on macOS, otherwise
+ImageMagick's `magick`/`convert`), `cb` converts it to PNG so the saved file is
+something other tools can actually open. If the clipboard turns out *not* to hold
+an image, `cb` simply behaves as it always has and prints the text.
+
+## Over SSH
+
+Image pasting works through the daemon too. When you run `cb` on a remote box,
+the **host** (the machine with the real clipboard) streams the raw image *bytes*
+back, and the **remote** saves them to its own `/tmp` -- so the path `cb` prints
+is always local to wherever you ran it. Enable it the same way you enable the
+remote port: have the variable travel over SSH via `~/.ssh/config`:
+
+    Host devbox
+        HostName devbox.example.com
+        RemoteForward 5567 localhost:5556
+        SetEnv LC_CB_REMOTE_PORT=5567 LC_CB_IMAGE=1
+
+(Cygwin's `/dev/clipboard` is text-only, so a Cygwin machine cannot *provide* an
+image -- but it can still relay text as before.)
+
+**Note -- why SSH image pastes pause for a couple of seconds:** the daemon is
+currently one-shot: it handles a single connection, exits, and gets restarted by
+a shell loop, so there is a brief window after each request where nothing is
+listening on the port. An image paste over SSH makes two back-to-back requests
+(text first, then the image), and the second one races that restart. The failure
+is silent, too: SSH accepts the forwarded connection immediately, so when the
+daemon isn't back up yet the client just sees the channel close with zero bytes
+-- indistinguishable from "no image on the clipboard". As a workaround, `cb`
+waits 2 seconds between the two requests. The real fix is to make the daemon
+bind once and `accept()` in a loop, which removes the gap entirely (and lets
+back-to-back requests queue in the listen backlog); until then, expect the
+pause.
+
 # Tmux integration
 
 Add the following to your `.tmux.conf`:
