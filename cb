@@ -4,7 +4,11 @@
 #
 #   * cb                  # outputs the content of the clipboard
 #   * fortune | cb        # Pipes fortune's output into the clipboard
-#   * cb --force-paste    # forces cb to start in 'paste' mode
+#   * cb --paste          # forces cb to start in 'paste' mode
+#   * cb --force-paste    # same as --paste (older name, still supported)
+#   * cb --copy           # forces cb to start in 'copy' mode, empty input included
+#   * cb </dev/null       # clears the clipboard (copying nothing from anything
+#                         # else than /dev/null is refused)
 #   * cb --listen         # starts a clipboard daemon -- handy when trying to
 #                         # update the clipboard from a remote ssh session
 
@@ -35,7 +39,7 @@ if input == b'${CB_REMOTE_PASTE_REQUEST_TOKEN}':
     print('Pasted')
     print(clipboard)
 else:
-    process = subprocess.Popen(['$0'], stdin=subprocess.PIPE)
+    process = subprocess.Popen(['$0', '--copy'], stdin=subprocess.PIPE)
     process.communicate(input)
     process.wait()
     print('Copied')
@@ -66,6 +70,14 @@ paste() {
 copy() {
     local input
     input=$(cat)
+    # Refuse to wipe the clipboard with nothing, unless the caller made that
+    # intent explicit -- either with --copy, or by reading from /dev/null.
+    # Note $(cat) strips trailing newlines, so an input made of newlines only
+    # slurps down to the empty string, and gets refused just like no input.
+    if [ -z "$input" ] && [ "${1:-}" != "--force" ] && ! [ /dev/stdin -ef /dev/null ]; then
+        echo "cb: stdin is empty, refusing to overwrite the clipboard (use </dev/null to clear it, or --paste to paste)" >&2
+        return 1
+    fi
     if [ -n "${CB_OSC52:-${LC_CB_OSC52:-}}" ] && printf '%s' "$input" | osc52_copy; then
         : # do nothing... it would already have been copied
     elif env | grep --quiet -F SSH_TTY; then
@@ -112,10 +124,17 @@ osc52_copy() {
     fi
 }
 
-if [ "$1" = "--listen" ]; then
-    listen
-elif [ "$1" = "--force-paste" ]; then
-    paste
-else
-    test -t 0 && paste || copy
-fi
+case "${1:-}" in
+    --listen)
+        listen
+        ;;
+    --paste|--force-paste)
+        paste
+        ;;
+    --copy)
+        copy --force
+        ;;
+    *)
+        test -t 0 && paste || copy
+        ;;
+esac

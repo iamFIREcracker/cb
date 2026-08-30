@@ -43,6 +43,15 @@ Reading from the OS clipboard it's even easier:
     A little suffering is good for the soul.
                     -- Kirk, "The Corbomite Maneuver", stardate 1514.0
 
+With no flags `cb` guesses what you meant: it pastes when its input is a
+terminal, and copies otherwise.  You can be explicit about it with `cb --paste`
+(also spelled `cb --force-paste`) and `cb --copy`.
+
+Copying nothing is almost never what you want, so `cb` refuses to overwrite the
+clipboard when it reads an empty input, and tells you so on stderr (exiting with
+1).  To deliberately empty the clipboard -- say, right after copying a password
+-- clear it with `cb </dev/null`, or force the copy with `cb --copy`.
+
 # Advanced usage: remote sessions
 
 Most of the development activities I do at work, I do from a Vagrant box;
