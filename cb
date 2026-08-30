@@ -455,7 +455,6 @@ do_paste() {
     text=$(paste)
 
     if env | grep --quiet -F SSH_TTY; then
-        echo sleeping
         sleep 2 # XXX the server is bouncing after the the text paste..
         # The host streams raw image bytes back; we save them locally below.
         printf '%s' "$CB_REMOTE_PASTE_IMAGE_REQUEST_TOKEN" | remote > "$tmp"
